@@ -204,8 +204,8 @@
 
   const bounds = P.reduce((b, p) => b.extend(p.c), new maplibregl.LngLatBounds(P[0].c, P[0].c));
   const fitOverview = (dur = 2000) => (map.getLayer('labels') && map.setPaintProperty('labels', 'raster-opacity', 0.85), map.fitBounds(bounds, {
-    padding: innerWidth < 760 ? { top: 170, bottom: 130, left: 30, right: 30 } : { top: 60, bottom: 160, left: 360, right: 310 },
-    pitch: 38, bearing: -12, duration: dur }));
+    padding: innerWidth < 760 ? { top: 170, bottom: 130, left: 30, right: 30 } : { top: 70, bottom: 190, left: 360, right: 310 },
+    pitch: 22, bearing: -8, duration: dur }));
 
   // ---------- Day list ----------
   const daysEl = document.getElementById('days');
