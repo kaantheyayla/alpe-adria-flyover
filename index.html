@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salzburg → Trieste Flyover</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: rgba(12, 16, 22, 0.72);
+    --panel-border: rgba(255, 255, 255, 0.10);
+    --text: #f3f5f7;
+    --muted: #9aa6b2;
+    --accent: #ffc531;
+    --accent-2: #ff7a1a;
+    --cool: #7cc6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; overflow: hidden; }
+  #map { position: absolute; inset: 0; }
+
+  .panel { background: var(--panel); border: 1px solid var(--panel-border); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-radius: 14px; }
+
+  #hud { position: absolute; top: 16px; left: 16px; width: 320px; padding: 16px 18px; z-index: 5; }
+  #hud .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #hud h1 { margin: 4px 0 12px; font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+  #hud h1 span { color: var(--accent); }
+  #stage-line { font-size: 13px; color: var(--muted); }
+  #stage-name { font-size: 16px; font-weight: 600; margin: 2px 0 12px; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; }
+  .stat .k { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .stat .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .v small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+
+  #days { position: absolute; top: 16px; right: 16px; width: 270px; padding: 10px; z-index: 5; max-height: calc(100% - 200px); overflow-y: auto; }
+  #days .title { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding: 4px 8px 8px; }
+  .day { display: grid; grid-template-columns: 44px 1fr; gap: 2px 8px; padding: 8px; border-radius: 10px; cursor: pointer; transition: background .2s; }
+  .day:hover { background: rgba(255,255,255,.06); }
+  .day.active { background: rgba(255, 197, 49, .14); }
+  .day .n { grid-row: span 2; font-weight: 800; font-size: 13px; color: var(--accent); padding-top: 1px; }
+  .day .r { font-size: 13px; font-weight: 600; }
+  .day .m { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  #bottom { position: absolute; left: 16px; right: 16px; bottom: 16px; padding: 12px 14px 10px; z-index: 5; display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; }
+  #controls { display: flex; flex-direction: column; gap: 8px; }
+  button { font: inherit; color: var(--text); background: rgba(255,255,255,.08); border: 1px solid var(--panel-border); border-radius: 10px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  button:hover { background: rgba(255,255,255,.14); }
+  #play { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: #1b1300; border: none; font-size: 20px; display: grid; place-items: center; }
+  #play:hover { background: #ffd65e; }
+  .row { display: flex; gap: 6px; }
+  #profile-wrap { position: relative; height: 92px; cursor: pointer; }
+  #profile { width: 100%; height: 100%; display: block; }
+
+  #card { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(.96); text-align: center; z-index: 6; pointer-events: none; opacity: 0; transition: opacity .6s, transform .6s; padding: 22px 34px; }
+  #card.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #card .d { font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  #card .t { font-size: 30px; font-weight: 800; margin: 6px 0; letter-spacing: -.01em; }
+  #card .s { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .rider { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(255,197,49,.35), 0 0 24px 6px rgba(255,197,49,.6); }
+  .town { font-size: 11.5px; font-weight: 700; color: #fff; background: rgba(10,14,20,.78); border: 1px solid rgba(255,255,255,.18); padding: 3px 8px; border-radius: 999px; white-space: nowrap; transform: translateY(-14px); }
+  .town.end { background: var(--accent); color: #1b1300; border-color: transparent; }
+  .town::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.45); }
+  .train { font-size: 11px; font-weight: 600; color: #cfe9ff; background: rgba(10,14,20,.78); border: 1px dashed rgba(124,198,255,.7); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+
+  #loading { position: absolute; inset: 0; display: grid; place-items: center; z-index: 10; background: var(--bg); transition: opacity .8s; font-size: 13px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+  #loading.hide { opacity: 0; pointer-events: none; }
+
+  .maplibregl-ctrl-attrib { font-size: 10px; }
+
+  @media (max-width: 760px) {
+    #hud { left: 16px; right: 16px; width: auto; padding: 12px 14px; }
+    #hud h1 { font-size: 18px; margin-bottom: 8px; }
+    .stats { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .stat .v { font-size: 15px; }
+    #days { display: none; }
+    #bottom { grid-template-columns: 1fr; }
+    #controls { flex-direction: row; align-items: center; }
+    #play { width: 44px; height: 44px; }
+    #profile-wrap { height: 70px; }
+    #card .t { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="loading">Loading terrain…</div>
+
+<div id="hud" class="panel">
+  <div class="eyebrow">Alpe-Adria · September 2026</div>
+  <h1>Salzburg <span>→</span> Trieste</h1>
+  <div id="stage-line">Overview</div>
+  <div id="stage-name">9 days · 10 rides</div>
+  <div class="stats">
+    <div class="stat"><div class="k">Distance</div><div class="v" id="s-km">0<small>km</small></div></div>
+    <div class="stat"><div class="k">Elevation</div><div class="v" id="s-ele">–<small>m</small></div></div>
+    <div class="stat"><div class="k">Heart rate</div><div class="v" id="s-hr">–<small>bpm</small></div></div>
+    <div class="stat"><div class="k">Time</div><div class="v" id="s-time">–</div></div>
+  </div>
+</div>
+
+<div id="days" class="panel"><div class="title">Stages</div></div>
+
+<div id="card" class="panel"><div class="d"></div><div class="t"></div><div class="s"></div></div>
+
+<div id="bottom" class="panel">
+  <div id="controls">
+    <button id="play" title="Play / pause">▶</button>
+    <div class="row">
+      <button id="speed" title="Playback speed">1×</button>
+      <button id="overview" title="Show whole route">Overview</button>
+    </div>
+  </div>
+  <div id="profile-wrap"><canvas id="profile"></canvas></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="data.js"></script>
+<script>
+(() => {
+  const STAGES = window.TRIP;
+  const GAP_KM = 0.8;          // anything longer between two fixes is a transfer (train / overnight hop)
+  const BASE_SPEED = 2.4;      // km of route per second at 1×
+  const SPEEDS = [0.5, 1, 2, 4];
+  const HOLD_MS = 2600;        // title card pause at each new stage
+
+  // ---------- Build one continuous route ----------
+  const rad = x => x * Math.PI / 180;
+  const hav = (a, b) => {
+    const dLa = rad(b[1] - a[1]), dLo = rad(b[0] - a[0]);
+    const s = Math.sin(dLa / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLo / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(s));
+  };
+  const merc = p => [rad(p[0]), Math.log(Math.tan(Math.PI / 4 + rad(p[1]) / 2))];
+
+  const P = [];           // {c:[lon,lat], ele, hr, spd, t, stage, km, m}
+  const gaps = [];        // [[a,b], ...] transfer segments
+  const stageStartKm = [];
+  let km = 0, m = 0, prev = null;
+  STAGES.forEach((s, si) => {
+    s.pts.forEach((p, pi) => {
+      const c = [p[0], p[1]];
+      if (prev) {
+        const d = hav(prev.c, c);
+        const pm = merc(prev.c), cm = merc(c);
+        if (d > GAP_KM) gaps.push([prev.c, c]);
+        km += d; m += Math.hypot(cm[0] - pm[0], cm[1] - pm[1]);
+      }
+      if (pi === 0) stageStartKm.push(km);
+      prev = { c, ele: p[2], t: p[3], hr: p[4], spd: p[5], stage: si, km, m };
+      P.push(prev);
+    });
+  });
+  const TOTAL_KM = km, TOTAL_M = m;
+  const RIDE_KM = STAGES.reduce((a, s) => a + s.km, 0);
+
+  function at(k) {
+    k = Math.max(0, Math.min(TOTAL_KM, k));
+    let lo = 0, hi = P.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (P[mid].km <= k) lo = mid; else hi = mid; }
+    const a = P[lo], b = P[hi];
+    const f = b.km > a.km ? (k - a.km) / (b.km - a.km) : 0;
+    const L = (x, y) => x == null ? y : y == null ? x : x + (y - x) * f;
+    return { c: [L(a.c[0], b.c[0]), L(a.c[1], b.c[1])], ele: L(a.ele, b.ele), hr: L(a.hr, b.hr), t: L(a.t, b.t),
+             stage: a.stage, m: L(a.m, b.m) };
+  }
+  const bearing = (a, b) => {
+    const y = Math.sin(rad(b[0] - a[0])) * Math.cos(rad(b[1]));
+    const x = Math.cos(rad(a[1])) * Math.sin(rad(b[1])) - Math.sin(rad(a[1])) * Math.cos(rad(b[1])) * Math.cos(rad(b[0] - a[0]));
+    return Math.atan2(y, x) * 180 / Math.PI;
+  };
+
+  // ---------- Map ----------
+  const map = new maplibregl.Map({
+    container: 'map',
+    attributionControl: { compact: true },
+    style: {
+      version: 8,
+      sources: {
+        sat: { type: 'raster', tileSize: 256, maxzoom: 18,
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' },
+        labels: { type: 'raster', tileSize: 256, maxzoom: 18,
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'] },
+        dem: { type: 'raster-dem', tileSize: 256, maxzoom: 14, encoding: 'terrarium',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          attribution: 'Terrain: Mapzen / AWS Open Data' }
+      },
+      layers: [
+        { id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-saturation': -0.1, 'raster-contrast': 0.08 } },
+        { id: 'labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.85, 'raster-opacity-transition': { duration: 800 } } }
+      ],
+      terrain: { source: 'dem', exaggeration: 1.35 },
+      sky: {
+        'sky-color': '#7fb4e6', 'horizon-color': '#dce9f5', 'fog-color': '#cfdbe6',
+        'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.6, 'fog-ground-blend': 0.35, 'atmosphere-blend': 0.8
+      }
+    },
+    center: [13.4, 46.7], zoom: 7.4, pitch: 35, bearing: 0, maxPitch: 80
+  });
+
+  const bounds = P.reduce((b, p) => b.extend(p.c), new maplibregl.LngLatBounds(P[0].c, P[0].c));
+  const fitOverview = (dur = 2000) => (map.getLayer('labels') && map.setPaintProperty('labels', 'raster-opacity', 0.85), map.fitBounds(bounds, {
+    padding: innerWidth < 760 ? { top: 170, bottom: 130, left: 30, right: 30 } : { top: 60, bottom: 160, left: 360, right: 310 },
+    pitch: 38, bearing: -12, duration: dur }));
+
+  // ---------- Day list ----------
+  const daysEl = document.getElementById('days');
+  STAGES.forEach((s, i) => {
+    const el = document.createElement('div');
+    el.className = 'day';
+    const d = new Date(s.date + 'T12:00');
+    el.innerHTML = `<div class="n">${s.day.replace('Day ', 'D')}</div><div class="r">${s.from} → ${s.to}</div>
+      <div class="m">${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · ${s.km} km · ↑${s.up} m</div>`;
+    el.onclick = () => { seek(stageStartKm[i]); showCard(i); if (!playing) followFrame(true); };
+    daysEl.appendChild(el);
+  });
+  const dayEls = [...daysEl.querySelectorAll('.day')];
+
+  // ---------- HUD ----------
+  const $ = id => document.getElementById(id);
+  const card = $('card');
+  let cardTimer;
+  function showCard(i) {
+    const s = STAGES[i];
+    const d = new Date(s.date + 'T12:00');
+    card.querySelector('.d').textContent = `${s.day} · ${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`;
+    card.querySelector('.t').textContent = `${s.from} → ${s.to}`;
+    card.querySelector('.s').textContent = `${s.km} km  ·  ↑ ${s.up} m  ·  ↓ ${s.down} m  ·  ${Math.floor(s.min / 60)} h ${String(s.min % 60).padStart(2, '0')}`;
+    card.classList.add('show');
+    clearTimeout(cardTimer);
+    cardTimer = setTimeout(() => card.classList.remove('show'), HOLD_MS);
+  }
+  function updateHud(p) {
+    const s = STAGES[p.stage];
+    $('stage-line').textContent = `${s.day} · ${new Date(s.date + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}`;
+    $('stage-name').textContent = `${s.from} → ${s.to}`;
+    $('s-km').innerHTML = `${Math.min(pos, RIDE_KM).toFixed(1)}<small>/ ${Math.round(RIDE_KM)} km</small>`;
+    $('s-ele').innerHTML = p.ele != null ? `${Math.round(p.ele)}<small>m</small>` : '–';
+    $('s-hr').innerHTML = p.hr ? `${Math.round(p.hr)}<small>bpm</small>` : '–';
+    const [h, mm] = s.start.split(':').map(Number);
+    const clock = h * 60 + mm + p.t / 60;
+    $('s-time').textContent = `${String(Math.floor(clock / 60) % 24).padStart(2, '0')}:${String(Math.floor(clock % 60)).padStart(2, '0')}`;
+    dayEls.forEach((e, i) => e.classList.toggle('active', i === p.stage));
+  }
+
+  // ---------- Elevation profile ----------
+  const cv = $('profile'), ctx = cv.getContext('2d');
+  let prof = null;
+  function buildProfile() {
+    const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = w * dpr; cv.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.max(2, Math.floor(w));
+    const eles = Array.from({ length: n }, (_, i) => at(i / (n - 1) * TOTAL_KM).ele ?? 0);
+    prof = { w, h, n, eles, top: 18, max: Math.max(...eles) * 1.05, min: Math.min(0, ...eles) };
+  }
+  function drawProfile() {
+    if (!prof) return;
+    const { w, h, n, eles, top, max, min } = prof;
+    const y = e => top + (h - top - 14) * (1 - (e - min) / (max - min));
+    const x = i => i / (n - 1) * w;
+    const px = pos / TOTAL_KM * w;
+    ctx.clearRect(0, 0, w, h);
+    const area = () => { ctx.beginPath(); ctx.moveTo(0, h - 14); eles.forEach((e, i) => ctx.lineTo(x(i), y(e))); ctx.lineTo(w, h - 14); ctx.closePath(); };
+    area(); ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, px, h); ctx.clip();
+    const g = ctx.createLinearGradient(0, top, 0, h);
+    g.addColorStop(0, 'rgba(255,197,49,.85)'); g.addColorStop(1, 'rgba(255,122,26,.15)');
+    area(); ctx.fillStyle = g; ctx.fill(); ctx.restore();
+    ctx.beginPath(); eles.forEach((e, i) => i ? ctx.lineTo(x(i), y(e)) : ctx.moveTo(x(i), y(e)));
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = '600 10px Inter, sans-serif'; ctx.textBaseline = 'top';
+    stageStartKm.forEach((k, i) => {
+      if (i && STAGES[i].day === STAGES[i - 1].day) return;
+      const sx = k / TOTAL_KM * w;
+      ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(sx, 0, 1, h - 14);
+      ctx.fillStyle = i <= curStage ? '#ffc531' : '#9aa6b2';
+      ctx.fillText(STAGES[i].day.replace('Day ', 'D'), sx + 4, 2);
+    });
+    ctx.fillStyle = '#9aa6b2'; ctx.textBaseline = 'bottom';
+    ctx.fillText(`${Math.round(max / 1.05)} m`, w - 44, top + 12);
+    ctx.fillText('Salzburg', 0, h); ctx.textAlign = 'right'; ctx.fillText('Trieste', w, h); ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff'; ctx.fillRect(px - 1, top - 4, 2, h - top - 10);
+  }
+  addEventListener('resize', () => { buildProfile(); drawProfile(); });
+  $('profile-wrap').addEventListener('click', e => {
+    const r = cv.getBoundingClientRect();
+    seek((e.clientX - r.left) / r.width * TOTAL_KM);
+    if (!playing) followFrame(true);
+  });
+
+  // ---------- Playback ----------
+  let pos = 0, playing = false, speedIdx = 1, curStage = -1, holdUntil = 0, last = 0;
+  let camBearing = null, camCenter = null, inOverview = true;
+  let rider;
+
+  function seek(k) {
+    pos = Math.max(0, Math.min(TOTAL_KM, k));
+    curStage = at(pos).stage;
+    holdUntil = 0; camBearing = null; camCenter = null;
+  }
+
+  function setProgress(p) {
+    const f = Math.max(0.00001, Math.min(0.99999, p.m / TOTAL_M));
+    map.setPaintProperty('route', 'line-gradient',
+      ['step', ['line-progress'], '#ffc531', f, 'rgba(255,255,255,0.9)']);
+    rider.setLngLat(p.c);
+  }
+
+  function followFrame(snap) {
+    const p = at(pos);
+    const ahead = at(pos + 1.4).c, behind = at(pos - 0.3).c;
+    let target = bearing(behind, ahead);
+    if (camBearing == null || snap) camBearing = target;
+    else { let d = ((target - camBearing + 540) % 360) - 180; camBearing += d * 0.035; }
+    if (camCenter == null || snap) camCenter = p.c.slice();
+    else { camCenter[0] += (p.c[0] - camCenter[0]) * 0.25; camCenter[1] += (p.c[1] - camCenter[1]) * 0.25; }
+    if (inOverview) map.setPaintProperty('labels', 'raster-opacity', 0);
+    inOverview = false;
+    map.jumpTo({ center: camCenter, bearing: camBearing, pitch: 64, zoom: innerWidth < 760 ? 12.2 : 12.9 });
+    setProgress(p); updateHud(p); drawProfile();
+  }
+
+  function tick(now) {
+    const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+    last = now;
+    if (playing) {
+      if (now >= holdUntil) {
+        pos += dt * BASE_SPEED * SPEEDS[speedIdx];
+        const st = at(pos).stage;
+        if (st !== curStage) { curStage = st; showCard(st); holdUntil = now + HOLD_MS; }
+        if (pos >= TOTAL_KM) { pos = TOTAL_KM; finish(); }
+      }
+      followFrame(false);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function finish() {
+    playing = false; $('play').textContent = '↺';
+    card.querySelector('.d').textContent = 'Finished · 15 September 2026';
+    card.querySelector('.t').textContent = 'Salzburg → Trieste';
+    const up = STAGES.reduce((a, s) => a + s.up, 0), mins = STAGES.reduce((a, s) => a + s.min, 0);
+    card.querySelector('.s').textContent = `${Math.round(RIDE_KM)} km  ·  ↑ ${up.toLocaleString()} m  ·  ${Math.floor(mins / 60)} h on the bike  ·  9 days`;
+    card.classList.add('show'); clearTimeout(cardTimer);
+    cardTimer = setTimeout(() => card.classList.remove('show'), 6000);
+    setTimeout(() => { inOverview = true; fitOverview(4000); }, 1200);
+  }
+
+  $('play').onclick = () => {
+    if (pos >= TOTAL_KM) seek(0);
+    playing = !playing;
+    $('play').textContent = playing ? '❚❚' : '▶';
+    if (playing) {
+      last = 0;
+      if (inOverview || curStage < 0) {
+        // glide from overview down to the rider, then start following
+        const p = at(pos), b = bearing(at(pos - 0.3).c, at(pos + 1.4).c);
+        playing = false;
+        map.setPaintProperty('labels', 'raster-opacity', 0);
+        map.flyTo({ center: p.c, zoom: innerWidth < 760 ? 12.2 : 12.9, pitch: 64, bearing: b, duration: 3500, essential: true });
+        map.once('moveend', () => {
+          inOverview = false; camBearing = b; camCenter = p.c.slice();
+          if (curStage < 0 || pos === 0) { curStage = p.stage; showCard(p.stage); holdUntil = performance.now() + HOLD_MS; }
+          playing = true;
+        });
+      }
+    }
+  };
+  $('speed').onclick = () => { speedIdx = (speedIdx + 1) % SPEEDS.length; $('speed').textContent = SPEEDS[speedIdx] + '×'; };
+  $('overview').onclick = () => {
+    playing = false; $('play').textContent = '▶'; inOverview = true; fitOverview();
+  };
+  addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); $('play').click(); } });
+
+  // ---------- Layers ----------
+  map.on('load', () => {
+    map.addSource('route', { type: 'geojson', lineMetrics: true,
+      data: { type: 'Feature', geometry: { type: 'LineString', coordinates: P.map(p => p.c) } } });
+    map.addSource('gaps', { type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'MultiLineString', coordinates: gaps } } });
+    map.addLayer({ id: 'route-casing', type: 'line', source: 'route',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': 'rgba(0,0,0,0.45)', 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 4, 13, 9] } });
+    map.addLayer({ id: 'route', type: 'line', source: 'route',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 2.2, 13, 5],
+               'line-gradient': ['step', ['line-progress'], '#ffc531', 0.00001, 'rgba(255,255,255,0.9)'] } });
+    map.addLayer({ id: 'gaps', type: 'line', source: 'gaps',
+      paint: { 'line-color': '#7cc6ff', 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 2.5, 13, 5], 'line-dasharray': [1.2, 1.2] } });
+
+    // overnight towns
+    const towns = [{ name: STAGES[0].from, c: STAGES[0].pts[0] }];
+    STAGES.forEach((s, i) => { if (i === STAGES.length - 1 || STAGES[i + 1].day !== s.day) towns.push({ name: s.to, c: s.pts[s.pts.length - 1] }); });
+    towns.forEach((t, i) => {
+      const el = document.createElement('div');
+      el.className = 'town' + (i === 0 || i === towns.length - 1 ? ' end' : '');
+      el.textContent = t.name;
+      new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([t.c[0], t.c[1]]).addTo(map);
+    });
+    // rail transfer label
+    gaps.filter(g => hav(g[0], g[1]) > 5).forEach(g => {
+      const el = document.createElement('div'); el.className = 'train'; el.textContent = '🚆 Tauern rail tunnel';
+      new maplibregl.Marker({ element: el }).setLngLat([(g[0][0] + g[1][0]) / 2, (g[0][1] + g[1][1]) / 2]).addTo(map);
+    });
+
+    const re = document.createElement('div'); re.className = 'rider';
+    rider = new maplibregl.Marker({ element: re }).setLngLat(P[0].c).addTo(map);
+
+    buildProfile(); drawProfile(); updateHud(at(0));
+    $('stage-line').textContent = 'Press ▶ or Space to fly the route';
+    $('stage-name').textContent = '9 days · 10 rides';
+    fitOverview(0);
+    map.once('idle', () => $('loading').classList.add('hide'));
+    setTimeout(() => $('loading').classList.add('hide'), 6000);
+    if (new URLSearchParams(location.search).has('autoplay')) setTimeout(() => $('play').click(), 1500);
+    requestAnimationFrame(tick);
+  });
+})();
+</script>
+</body>
+</html>
